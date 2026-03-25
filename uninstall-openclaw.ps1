@@ -217,11 +217,10 @@ function Get-ProtectedProcessIds {
 # 中文注释：先停进程和服务，再删文件，减少“文件正在被占用”的失败概率。
 function Stop-OpenClawProcesses {
     $protectedProcessIds = Get-ProtectedProcessIds
+    $targetProcessNames = @('openclaw', 'open-claw', 'open_claw', 'OpenClaw')
     $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        -not $protectedProcessIds.Contains([int]$_.ProcessId) -and (
-        $_.Name -match '(?i)openclaw' -or
-        $_.ExecutablePath -match '(?i)openclaw' -or
-        $_.CommandLine -match '(?i)openclaw')
+        $processName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
+        -not $protectedProcessIds.Contains([int]$_.ProcessId) -and $targetProcessNames -contains $processName
     }
 
     foreach ($process in $processes) {

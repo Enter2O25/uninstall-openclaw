@@ -421,28 +421,36 @@ confirm_execution() {
 
 # 中文注释：先停进程再删文件，避免进程占用导致部分文件残留。
 stop_processes() {
-  local pattern='openclaw|open-claw|open_claw|OpenClaw'
+  local process_name=""
   local pid=""
   local has_killed=false
+  local process_names=(
+    "openclaw"
+    "open-claw"
+    "open_claw"
+    "OpenClaw"
+  )
 
   command_exists pgrep || return 0
 
   load_protected_pids
 
-  while IFS= read -r pid; do
-    [[ -z "$pid" ]] && continue
+  for process_name in "${process_names[@]}"; do
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
 
-    if pid_is_protected "$pid"; then
-      continue
-    fi
+      if pid_is_protected "$pid"; then
+        continue
+      fi
 
-    if [[ "$DRY_RUN" == true ]]; then
-      log_info "[dry-run] kill $pid"
-    else
-      kill "$pid" >/dev/null 2>&1 || true
-    fi
-    has_killed=true
-  done < <(pgrep -f "$pattern" 2>/dev/null || true)
+      if [[ "$DRY_RUN" == true ]]; then
+        log_info "[dry-run] kill $pid ($process_name)"
+      else
+        kill "$pid" >/dev/null 2>&1 || true
+      fi
+      has_killed=true
+    done < <(pgrep -x "$process_name" 2>/dev/null || true)
+  done
 
   if [[ "$has_killed" == true ]]; then
     ACTIONS=$((ACTIONS + 1))
@@ -699,12 +707,17 @@ main() {
 
   confirm_execution
 
+  log_info "开始停止 OpenClaw 相关进程。"
   stop_processes
+  log_info "开始清理 OpenClaw 服务。"
   cleanup_services
+  log_info "开始卸载 OpenClaw 相关包。"
   uninstall_packages
+  log_info "开始删除 OpenClaw 目录和数据。"
   remove_candidate_paths
 
   if [[ "$MODE" == "full" ]]; then
+    log_info "开始清理 OpenClaw 环境和配置。"
     remove_environment_paths
     clean_shell_profiles
   fi
