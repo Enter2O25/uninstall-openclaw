@@ -7,6 +7,8 @@
 
 ## 文件说明
 
+- `uninstall.sh`
+  统一远程入口脚本，适合 `curl ... | bash` 方式调用，会先判断当前环境，再选择对应卸载脚本。
 - `uninstall-openclaw.sh`
   Linux / macOS 主脚本，支持交互式和命令行参数。
 - `uninstall-openclaw.command`
@@ -16,7 +18,7 @@
 - `uninstall-openclaw.bat`
   Windows 启动包装，双击后会调用 `uninstall-openclaw.ps1`。
 - `remote-uninstall.sh`
-  Linux / macOS 远程启动脚本，会下载并执行最新的 `uninstall-openclaw.sh`。
+  兼容旧命令的远程入口，会转发到 `uninstall.sh`。
 - `remote-uninstall.ps1`
   Windows 远程启动脚本，会下载并执行最新的 `uninstall-openclaw.ps1`。
 
@@ -41,35 +43,46 @@
 
 ## 远程一键卸载
 
-适合“不想先 clone 仓库，只想直接远程执行”的场景。
+适合“不想先 clone 仓库，只想直接远程执行”的场景。推荐使用统一入口 `uninstall.sh`，它会先判断当前环境，再自动选择对应卸载方式：
+
+- `Linux / macOS / WSL`：下载并执行 `uninstall-openclaw.sh`
+- `Windows Git Bash / MSYS / Cygwin`：下载并调用 `uninstall-openclaw.ps1`
 
 ### Linux / macOS
 
 交互式远程执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/uninstall.sh | bash
 ```
 
 远程执行“全部卸载清理（包括环境）”：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash -s -- --mode full --yes
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/uninstall.sh | bash -s -- --mode full --yes
 ```
 
 远程执行“保留环境，只卸载清理 OpenClaw”：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash -s -- --mode app --yes
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/uninstall.sh | bash -s -- --mode app --yes
 ```
 
 如果目标机器没有 `curl`，也可以使用：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash -s -- --mode full --yes
+wget -qO- https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/uninstall.sh | bash -s -- --mode full --yes
 ```
 
 ### Windows
+
+如果是在 `Git Bash`、`MSYS2` 或 `Cygwin` 里，也可以直接使用和 Linux 一样的统一入口：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/uninstall.sh | bash -s -- --mode full --yes
+```
+
+如果是在原生 PowerShell 中，继续使用下面这个命令更直接：
 
 交互式远程执行：
 
@@ -90,6 +103,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create
 ```
 
 如果你需要走企业镜像或私有 Raw 地址，可以通过 `OPENCLAW_REMOTE_BASE_URL` 覆盖默认下载地址。
+
+如果你还在沿用旧命令，这个兼容入口仍然可用：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash -s -- --mode full --yes
+```
 
 ### Linux / macOS
 

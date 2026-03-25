@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly REMOTE_BASE_URL="${OPENCLAW_REMOTE_BASE_URL:-https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main}"
-readonly TARGET_SCRIPT_NAME="uninstall-openclaw.sh"
+readonly TARGET_SCRIPT_NAME="uninstall.sh"
 
 TEMP_DIR=""
 
@@ -44,7 +44,7 @@ create_temp_dir() {
   return 1
 }
 
-# 中文注释：优先使用 curl，其次回退到 wget，保证大部分服务器和桌面环境都能直接运行。
+# 中文注释：保留旧入口兼容性，但实际逻辑统一转发到新的 uninstall.sh。
 download_remote_script() {
   local target_path="$1"
   local script_url="${REMOTE_BASE_URL%/}/${TARGET_SCRIPT_NAME}"
@@ -63,7 +63,7 @@ download_remote_script() {
   return 1
 }
 
-# 中文注释：远程入口只负责拉取最新主脚本并原样透传参数，避免维护两套卸载逻辑。
+# 中文注释：旧入口只做最薄的一层跳转，避免已有命令失效。
 main() {
   local bash_bin=""
   local target_script=""
