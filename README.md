@@ -15,6 +15,10 @@
   Windows PowerShell 主脚本。
 - `uninstall-openclaw.bat`
   Windows 启动包装，双击后会调用 `uninstall-openclaw.ps1`。
+- `remote-uninstall.sh`
+  Linux / macOS 远程启动脚本，会下载并执行最新的 `uninstall-openclaw.sh`。
+- `remote-uninstall.ps1`
+  Windows 远程启动脚本，会下载并执行最新的 `uninstall-openclaw.ps1`。
 
 ## 功能覆盖
 
@@ -34,6 +38,58 @@
 ## 使用方式
 
 脚本会尽量自动清理，但如果 OpenClaw 安装在系统目录、注册为系统服务，或写入了系统级环境变量，请使用 `sudo`、管理员 PowerShell 或“以管理员身份运行”执行。
+
+## 远程一键卸载
+
+适合“不想先 clone 仓库，只想直接远程执行”的场景。
+
+### Linux / macOS
+
+交互式远程执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash
+```
+
+远程执行“全部卸载清理（包括环境）”：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash -s -- --mode full --yes
+```
+
+远程执行“保留环境，只卸载清理 OpenClaw”：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash -s -- --mode app --yes
+```
+
+如果目标机器没有 `curl`，也可以使用：
+
+```bash
+wget -qO- https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.sh | bash -s -- --mode full --yes
+```
+
+### Windows
+
+交互式远程执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.ps1').Content))"
+```
+
+远程执行“全部卸载清理（包括环境）”：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.ps1').Content)) -Mode full -Yes"
+```
+
+远程执行“保留环境，只卸载清理 OpenClaw”：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/Enter2O25/uninstall-openclaw/main/remote-uninstall.ps1').Content)) -Mode app -Yes"
+```
+
+如果你需要走企业镜像或私有 Raw 地址，可以通过 `OPENCLAW_REMOTE_BASE_URL` 覆盖默认下载地址。
 
 ### Linux / macOS
 
