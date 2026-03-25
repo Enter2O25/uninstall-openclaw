@@ -190,12 +190,38 @@ function Confirm-Execution {
     }
 }
 
+# 中文注释：沿着父进程链向上收集保护名单，避免根据命令行匹配进程时把当前卸载脚本自己也结束掉。
+function Get-ProtectedProcessIds {
+    $protectedIds = New-Object System.Collections.Generic.HashSet[int]
+    $currentProcessId = $PID
+
+    while ($currentProcessId -gt 0) {
+        $null = $protectedIds.Add($currentProcessId)
+
+        $currentProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $currentProcessId" -ErrorAction SilentlyContinue
+        if (-not $currentProcess) {
+            break
+        }
+
+        $parentProcessId = [int]$currentProcess.ParentProcessId
+        if ($parentProcessId -le 0 -or $parentProcessId -eq $currentProcessId) {
+            break
+        }
+
+        $currentProcessId = $parentProcessId
+    }
+
+    return $protectedIds
+}
+
 # 中文注释：先停进程和服务，再删文件，减少“文件正在被占用”的失败概率。
 function Stop-OpenClawProcesses {
+    $protectedProcessIds = Get-ProtectedProcessIds
     $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        -not $protectedProcessIds.Contains([int]$_.ProcessId) -and (
         $_.Name -match '(?i)openclaw' -or
         $_.ExecutablePath -match '(?i)openclaw' -or
-        $_.CommandLine -match '(?i)openclaw'
+        $_.CommandLine -match '(?i)openclaw')
     }
 
     foreach ($process in $processes) {

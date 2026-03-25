@@ -12,6 +12,7 @@ ACTIONS=0
 
 CANDIDATE_PATHS=()
 ENVIRONMENT_PATHS=()
+PROTECTED_PIDS=()
 
 PACKAGE_NAMES=(
   "openclaw"
@@ -166,6 +167,49 @@ append_unique_env_path() {
   done
 
   ENVIRONMENT_PATHS+=("$path")
+}
+
+append_unique_pid() {
+  local pid="$1"
+  local existing=""
+
+  [[ -z "$pid" ]] && return 0
+
+  for existing in "${PROTECTED_PIDS[@]:-}"; do
+    [[ "$existing" == "$pid" ]] && return 0
+  done
+
+  PROTECTED_PIDS+=("$pid")
+}
+
+# 中文注释：沿着父进程链向上收集保护名单，避免“停止 OpenClaw 进程”时把当前卸载脚本自身杀掉。
+load_protected_pids() {
+  local current_pid="${BASHPID:-$$}"
+  local parent_pid=""
+
+  PROTECTED_PIDS=()
+
+  while [[ -n "$current_pid" && "$current_pid" =~ ^[0-9]+$ ]]; do
+    append_unique_pid "$current_pid"
+
+    parent_pid="$(ps -o ppid= -p "$current_pid" 2>/dev/null | tr -d '[:space:]')"
+    if [[ -z "$parent_pid" || "$parent_pid" == "0" || "$parent_pid" == "$current_pid" ]]; then
+      break
+    fi
+
+    current_pid="$parent_pid"
+  done
+}
+
+pid_is_protected() {
+  local pid="$1"
+  local protected_pid=""
+
+  for protected_pid in "${PROTECTED_PIDS[@]:-}"; do
+    [[ "$protected_pid" == "$pid" ]] && return 0
+  done
+
+  return 1
 }
 
 add_existing_path() {
@@ -378,9 +422,29 @@ confirm_execution() {
 # 中文注释：先停进程再删文件，避免进程占用导致部分文件残留。
 stop_processes() {
   local pattern='openclaw|open-claw|open_claw|OpenClaw'
+  local pid=""
+  local has_killed=false
 
-  if command_exists pgrep && pgrep -f "$pattern" >/dev/null 2>&1; then
-    run_cmd pkill -f "$pattern"
+  command_exists pgrep || return 0
+
+  load_protected_pids
+
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+
+    if pid_is_protected "$pid"; then
+      continue
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+      log_info "[dry-run] kill $pid"
+    else
+      kill "$pid" >/dev/null 2>&1 || true
+    fi
+    has_killed=true
+  done < <(pgrep -f "$pattern" 2>/dev/null || true)
+
+  if [[ "$has_killed" == true ]]; then
     ACTIONS=$((ACTIONS + 1))
   fi
 }
