@@ -214,13 +214,42 @@ function Get-ProtectedProcessIds {
     return $protectedIds
 }
 
+# 中文注释：统一判断某个进程是否与 OpenClaw 相关，既覆盖原生进程名，也覆盖 node/npm 承载的命令行场景。
+function Test-IsOpenClawProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Process,
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Generic.HashSet[int]]$ProtectedProcessIds
+    )
+
+    if ($ProtectedProcessIds.Contains([int]$Process.ProcessId)) {
+        return $false
+    }
+
+    $processName = [System.IO.Path]::GetFileNameWithoutExtension(($Process.Name | Out-String).Trim())
+    $executablePath = ($Process.ExecutablePath | Out-String).Trim()
+    $commandLine = ($Process.CommandLine | Out-String).Trim()
+
+    if ($processName -in @('openclaw', 'open-claw', 'open_claw', 'OpenClaw')) {
+        return $true
+    }
+
+    if ($executablePath -match '(?i)openclaw' -or $commandLine -match '(?i)openclaw') {
+        if ($commandLine -match '(?i)uninstall-openclaw|remote-uninstall|uninstall\.ps1') {
+            return $false
+        }
+        return $true
+    }
+
+    return $false
+}
+
 # 中文注释：先停进程和服务，再删文件，减少“文件正在被占用”的失败概率。
 function Stop-OpenClawProcesses {
     $protectedProcessIds = Get-ProtectedProcessIds
-    $targetProcessNames = @('openclaw', 'open-claw', 'open_claw', 'OpenClaw')
     $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $processName = [System.IO.Path]::GetFileNameWithoutExtension($_.Name)
-        -not $protectedProcessIds.Contains([int]$_.ProcessId) -and $targetProcessNames -contains $processName
+        Test-IsOpenClawProcess -Process $_ -ProtectedProcessIds $protectedProcessIds
     }
 
     foreach ($process in $processes) {
@@ -283,13 +312,101 @@ function Invoke-RegistryUninstall {
     }
 }
 
+function Get-NpmGlobalRoot {
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    $npmRoot = & npm root -g 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($npmRoot)) {
+        return ($npmRoot | Select-Object -First 1).Trim()
+    }
+
+    return (Join-Path $env:APPDATA 'npm\node_modules')
+}
+
+function Get-NpmGlobalPrefix {
+    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    $npmPrefix = & npm prefix -g 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($npmPrefix)) {
+        return ($npmPrefix | Select-Object -First 1).Trim()
+    }
+
+    return (Join-Path $env:APPDATA 'npm')
+}
+
+# 中文注释：当 npm 因文件占用卸载失败时，直接回退清理全局包目录和命令入口，避免残留。
+function Remove-NpmPackageFallback {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Package
+    )
+
+    $removed = $false
+    $npmRoot = Get-NpmGlobalRoot
+    $npmPrefix = Get-NpmGlobalPrefix
+    $candidatePaths = @()
+
+    if ($npmRoot) {
+        $candidatePaths += (Join-Path $npmRoot $Package)
+    }
+
+    if ($npmPrefix) {
+        $candidatePaths += @(
+            (Join-Path $npmPrefix $Package),
+            (Join-Path $npmPrefix "$Package.cmd"),
+            (Join-Path $npmPrefix "$Package.ps1")
+        )
+    }
+
+    foreach ($candidatePath in $candidatePaths) {
+        if (-not (Test-Path -LiteralPath $candidatePath)) {
+            continue
+        }
+
+        Remove-PathSafely -Path $candidatePath
+        $removed = $true
+    }
+
+    return $removed
+}
+
+function Invoke-NpmUninstall {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Package
+    )
+
+    $npmOutput = & npm uninstall -g $Package 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        return $true
+    }
+
+    Write-WarnLine "npm 卸载 $Package 失败，准备尝试目录级清理。"
+    $npmOutput | ForEach-Object {
+        if (-not [string]::IsNullOrWhiteSpace($_)) {
+            Write-WarnLine $_
+        }
+    }
+
+    Stop-OpenClawProcesses
+    Start-Sleep -Seconds 2
+
+    return (Remove-NpmPackageFallback -Package $Package)
+}
+
 function Remove-UserPackages {
     foreach ($package in $PackageNames) {
         if (Get-Command npm -ErrorAction SilentlyContinue) {
             $npmOutput = & npm list -g --depth=0 $package 2>$null
             if ($LASTEXITCODE -eq 0 -and $npmOutput) {
                 Invoke-Step -Preview "npm uninstall -g $package" -Action {
-                    & npm uninstall -g $package
+                    if (-not (Invoke-NpmUninstall -Package $package)) {
+                        throw "npm 卸载 $package 失败，且目录级清理也未完成。"
+                    }
                 }
                 $script:Actions++
             }
@@ -442,14 +559,19 @@ if ($Mode -eq 'full') {
 
 Confirm-Execution -SelectedMode $Mode
 
+Write-Info '开始停止 OpenClaw 相关进程。'
 Stop-OpenClawProcesses
+Write-Info '开始清理 OpenClaw 服务。'
 Remove-OpenClawServices
+Write-Info '开始卸载 OpenClaw 相关包。'
 Invoke-RegistryUninstall
 Remove-UserPackages
 Remove-CondaEnvironment
+Write-Info '开始删除 OpenClaw 目录和数据。'
 Remove-CandidatePaths
 
 if ($Mode -eq 'full') {
+    Write-Info '开始清理 OpenClaw 环境和配置。'
     Remove-EnvironmentPaths
     Remove-EnvironmentVariables
     Remove-PathEntriesContainingOpenClaw
