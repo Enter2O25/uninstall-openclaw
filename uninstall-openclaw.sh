@@ -69,6 +69,30 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+# 中文注释：远程脚本通过管道执行时，标准输入会被 curl/wget 占用，这里优先改从 /dev/tty 读取真实用户输入。
+read_interactive_input() {
+  local prompt="$1"
+  local output_var="$2"
+  local user_input=""
+
+  if [[ -r /dev/tty && -w /dev/tty ]]; then
+    printf '%s' "$prompt" > /dev/tty
+    IFS= read -r user_input < /dev/tty || true
+    printf -v "$output_var" '%s' "$user_input"
+    return 0
+  fi
+
+  if [[ -t 0 ]]; then
+    printf '%s' "$prompt"
+    IFS= read -r user_input || true
+    printf -v "$output_var" '%s' "$user_input"
+    return 0
+  fi
+
+  log_error "当前会话不可交互，请使用 --mode full 或 --mode app，并按需追加 --yes。"
+  exit 1
+}
+
 # 中文注释：把命令渲染成可读字符串，便于 dry-run 时展示实际执行内容。
 format_command() {
   local rendered=""
@@ -278,8 +302,7 @@ choose_mode_interactively() {
   printf '\n请选择卸载模式：\n'
   printf '  1. 全部卸载清理（包括环境）\n'
   printf '  2. 保留环境，只卸载清理 OpenClaw\n'
-  printf '请输入选项 [1/2]: '
-  read -r choice
+  read_interactive_input '请输入选项 [1/2]: ' choice
 
   case "$choice" in
     1) MODE="full" ;;
@@ -341,8 +364,7 @@ confirm_execution() {
   fi
 
   printf '\n即将执行：%s\n' "$mode_label"
-  printf '确认继续？[y/N]: '
-  read -r answer
+  read_interactive_input '确认继续？[y/N]: ' answer
 
   case "$answer" in
     y|Y|yes|YES) ;;
